@@ -1,13 +1,13 @@
-/.cursor
+/.cursor/
 .*.swp
-*.d
-*.o
-*.obj
-*.a
-*.zip
-me7sum
-me7sum.exe
 .compiler_flags
 .clangd
-/bins/
 /testdata/reports/
+
+# unix build artifacts
+/build/
+
+# windows build artifacts
+/*.obj
+/me7sum.exe
+*.zip

@@ -32,12 +32,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           git config --global url."https://x-access-token:${TOKEN}@github.com/nyetlabs/ecu-corpus".insteadOf https://github.com/nyetlabs/ecu-corpus
-          git submodule update --init --checkout --remote corpus
+          git submodule update --init --checkout --remote ecu-corpus
           if git diff --quiet; then
             echo "corpus is current"
             exit 0
           fi
-          rev=$(git -C corpus rev-parse --short HEAD)
+          rev=$(git -C ecu-corpus rev-parse --short HEAD)
           branch=corpus-bump-$rev
           if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
             echo "$branch already exists"

@@ -11,16 +11,6 @@ on:
 permissions:
   contents: write
 
-env:
-  artifacts: |
-    me7sum
-    ME7Check_linux
-    README.md
-  artifacts_win: |
-    me7sum.exe
-    ME7Check.exe
-    README.md
-
 jobs:
   build-unix:
     permissions:
@@ -39,16 +29,12 @@ jobs:
         run: make
       - name: make test
         run: make test
-      - name: Zip and upload
-        run: |
-          ARTIFACTS="${artifacts//$'\n'/ }"
-          zip -qr me7sum-${{ github.ref_name }}-${{ matrix.os }}.zip ${ARTIFACTS}
-        env:
-          artifacts: ${{ env.artifacts }}
+      - name: package
+        run: make package
       - uses: actions/upload-artifact@v7
         with:
           name: me7sum-${{ github.ref_name }}-${{ matrix.os }}
-          path: me7sum-${{ github.ref_name }}-${{ matrix.os }}.zip
+          path: build/me7sum-*
 
   build-windows:
     permissions:
@@ -59,16 +45,16 @@ jobs:
       - name: build
         shell: cmd
         run: build.cmd
-      - name: Zip and upload
+      - name: zip
+        shell: pwsh
         run: |
-          $env:artifacts_win > artifacts.txt
-          cmd --% /c 7z a -tzip me7sum-${{ github.ref_name }}-win.zip @artifacts.txt
-        env:
-          artifacts_win: ${{ env.artifacts_win }}
+          New-Item -ItemType Directory -Force -Path build | Out-Null
+          $version = (git describe --tags --abbrev=4 --dirty --always).Trim()
+          tar -a -c -f "build/me7sum-$version.zip" me7sum.exe ME7Check.exe README.md sample.ini
       - uses: actions/upload-artifact@v7
         with:
           name: me7sum-${{ github.ref_name }}-win
-          path: me7sum-${{ github.ref_name }}-win.zip
+          path: build/me7sum-*
 
   release:
     needs: [ build-unix, build-windows ]
@@ -106,4 +92,6 @@ jobs:
           tag_name: ${{ github.ref_name }}
           body_path: release-notes.md
           prerelease: ${{ contains(github.ref_name, '-rc') }}
-          files: artifacts/**/*.zip
+          files: |
+            artifacts/**/*.zip
+            artifacts/**/*.tar.gz

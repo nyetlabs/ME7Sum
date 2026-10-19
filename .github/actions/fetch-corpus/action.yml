@@ -22,5 +22,5 @@ runs:
         TOKEN: ${{ steps.token.outputs.token }}
       run: |
         git config --global url."https://x-access-token:${TOKEN}@github.com/nyetlabs/ecu-corpus".insteadOf https://github.com/nyetlabs/ecu-corpus
-        git submodule update --init --checkout --depth 1 corpus
-        echo XDFKIT_REQUIRE_CORPUS=1 >>"$GITHUB_ENV"
+        git submodule update --init --checkout --depth 1 ecu-corpus
+        echo REQUIRE_CORPUS=1 >>"$GITHUB_ENV"
