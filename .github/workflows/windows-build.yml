@@ -22,7 +22,7 @@ jobs:
       run: |
         New-Item -ItemType Directory -Force -Path build | Out-Null
         $version = (git describe --tags --abbrev=4 --dirty --always).Trim()
-        tar -a -c -f "build/me7sum-$version.zip" me7sum.exe ME7Check.exe README.md sample.ini
+        7z a -tzip "build/me7sum-$version-win.zip" me7sum.exe ME7Check.exe README.md sample.ini
     - uses: rlespinasse/github-slug-action@v5
       id: slug
       with:

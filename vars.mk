@@ -2,7 +2,11 @@
 # SYS is the target triplet. Override it to cross-compile (see mingw targets).
 NATIVE_SYS := $(shell gcc -dumpmachine 2>/dev/null)
 SYS	?= $(NATIVE_SYS)
+
 UNAME_S	:= $(shell uname -s)
+UNAME_Darwin = macos
+UNAME_Linux = linux
+UNAME := $(UNAME_$(UNAME_S))
 
 # Version for --version et al
 GIT_VERSION := $(shell sh -c 'git describe --tags --abbrev=4 --dirty --always')

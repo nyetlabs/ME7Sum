@@ -48,10 +48,10 @@ ifneq (,$(findstring cygwin, $(NATIVE_SYS)))
 win:
 	$(RM) $(WIN_ARTIFACTS)
 	./build.cmd
-PACKAGE = me7sum-$(GIT_VERSION).zip
+PACKAGE = me7sum-$(GIT_VERSION)-win.zip
 PACKAGE_FILES += ME7Check.exe
 else # !Cygwin
-PACKAGE = me7sum-$(UNAME_S)-$(GIT_VERSION).tar.gz
+PACKAGE = me7sum-$(GIT_VERSION)-$(UNAME).tar.gz
 endif # !Cygwin
 
 include rules.mk

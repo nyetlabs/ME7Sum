@@ -50,7 +50,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path build | Out-Null
           $version = (git describe --tags --abbrev=4 --dirty --always).Trim()
-          tar -a -c -f "build/me7sum-$version.zip" me7sum.exe ME7Check.exe README.md sample.ini
+          7z a -tzip "build/me7sum-$version-win.zip" me7sum.exe ME7Check.exe README.md sample.ini
       - uses: actions/upload-artifact@v7
         with:
           name: me7sum-${{ github.ref_name }}-win
