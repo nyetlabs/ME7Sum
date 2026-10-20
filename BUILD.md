@@ -6,9 +6,8 @@ This document summarizes build dependencies and procedures for ME7Sum on Linux, 
 
 The project uses multiple build systems:
 
-- **GNUmakefile** + **vars.mk** + **makefile.common** — Unix-like builds (Linux, macOS, Cygwin, MinGW)
+- **GNUmakefile** + **vars.mk** + **rules.mk** — Unix-like builds (Linux, macOS, Cygwin, MinGW). `inifile/*.c` is compiled into `me7sum`
 - **makefile** — Native Windows with MSVC/nmake
-- **inifile/makefile** — Builds `libini.a` (included by main build)
 
 ---
 
@@ -34,13 +33,13 @@ make
 make test   # optional
 ```
 
-Produces: `me7sum`, `inifile/libini.a`
+Produces: `build/<triplet>/bin/me7sum`
 
 ---
 
 ## Native Windows (MSVC)
 
-### Dependencies
+### Windows Dependencies
 
 - **Visual Studio Build Tools 2022** (or any VS 2017+ install) with the **Desktop development with C++** workload — free download from [Visual Studio](https://visualstudio.microsoft.com/downloads/)
 - **nmake** — Included with the C++ build tools
@@ -50,7 +49,7 @@ Produces: `me7sum`, `inifile/libini.a`
 
 The Windows build uses **bundled MPIR** (`mpir/mpir-2017.lib`) for big-integer math. No system GMP or MPIR installation is required. The library was built with the VS 2017 toolset but links with newer MSVC versions; rebuild MPIR only if linking fails after a major VS upgrade.
 
-### Build
+### Windows Build
 
 From a normal Command Prompt:
 
@@ -71,7 +70,7 @@ build
 
 ## Cygwin
 
-### Dependencies
+### Cygwin Dependencies
 
 - **gcc** (Cygwin)
 - **make**
@@ -84,35 +83,40 @@ Install via Cygwin setup:
 # Install gcc-core, make, git, libgmp-devel
 ```
 
-### Build
+### Cygwin Build
 
 ```bash
 make
 make test   # optional
 ```
 
-Produces: `me7sum-cyg.exe` (Cygwin-specific suffix per `vars.mk`)
+Produces: `build/<triplet>/bin/me7sum.exe`
 
 ---
 
-## macOS
+## MacOS
 
-### Dependencies
+### MacOS Dependencies
 
 - **Xcode Command Line Tools** (or full Xcode) — provides `gcc`/`clang`
 - **Homebrew** — for GMP
+- **pkg-config** — so the build can find GMP; install it if it is not already present
 - **gmp** — via Homebrew
 
 ```bash
-brew install gmp
+brew install pkg-config gmp
 ```
 
-### Build
+The makefile asks `pkg-config` for GMP's include and library flags. If that returns nothing, it uses `brew --prefix gmp` (Apple Silicon or Intel Homebrew). It does not hardcode a Homebrew path.
+
+### MacOS Build
 
 ```bash
 make
 make test   # optional
 ```
+
+Produces: `build/<triplet>/bin/me7sum`
 
 ---
 
@@ -120,33 +124,49 @@ make test   # optional
 
 `make test` runs `me7sum` over the test images and fails on any `ABORT`, `WARNING` or `ERROR`. Reports go to the gitignored `testdata/reports/`. The images are:
 
-- every image in the private [ecu-corpus](https://github.com/nyetlabs/ecu-corpus) submodule (`corpus/`) whose `corpus.tsv` row has `checksums` = `ok`
+- every image in the private [ecu-corpus](https://github.com/nyetlabs/ecu-corpus) submodule (`ecu-corpus/`) whose `corpus.tsv` row has `checksums` = `ok`
 - the modified (non-OEM) images in `testdata/modified/`; `testdata/broken/` holds images ME7Sum can't handle and is not tested
 
-With read access to `ecu-corpus`, fetch the submodule at its pinned commit with `make corpus`; `make corpus-bump` moves it to the corpus head (commit the change yourself). The submodule URL is HTTPS; to use SSH, run `git config --global url.git@github.com:.insteadOf https://github.com/`. Without access, `corpus/` stays empty and `make test` skips the corpus images. `XDFKIT_CORPUS` points the tests at another corpus checkout, and `XDFKIT_REQUIRE_CORPUS=1` (set in CI) makes a missing corpus a failure. See xdfkit's `docs/corpus.md` for the corpus specification.
-
-`make bins` is temporary and will be removed: it fills a gitignored `bins/` with symlinks under the names the old committed `bins/` directory used (`scripts/bins-compat.tsv` maps them to corpus images), for workflows that still read `bins/`. New work should use `corpus/images/<part>/NAME.bin` (`<part>` is the first 9 characters of the part number) instead.
+With read access to `ecu-corpus`, fetch the submodule at its pinned commit with `make corpus`; `make corpus-bump` moves it to the corpus head (commit the change yourself). The submodule URL is HTTPS; to use SSH, run `git config --global url.git@github.com:.insteadOf https://github.com/`. Without access, `ecu-corpus/` stays empty and `make test` skips the corpus images. `CORPUS` points the tests at another corpus checkout, and `REQUIRE_CORPUS=1` (set in CI) makes a missing corpus a failure. See xdfkit's `docs/corpus.md` for the corpus specification.
 
 ---
 
 ## Platform-Specific Notes
 
-| Platform | GMP/MPIR source       | Executable suffix     |
-| -------- | --------------------- | --------------------- |
-| Linux    | System `libgmp-dev`   | (none)                |
-| macOS    | Homebrew `gmp`        | (none)                |
-| Cygwin   | `libgmp-devel`        | `-cyg.exe`            |
-| MinGW    | System `libgmp`       | `.exe`                |
-| Windows  | Bundled `mpir`        | `.exe`                |
+| Platform | GMP/MPIR source                         | Executable                         |
+| -------- | --------------------------------------- | ---------------------------------- |
+| Linux    | System `libgmp-dev`                     | `build/<triplet>/bin/me7sum`       |
+| macOS    | Homebrew `gmp` via `pkg-config`         | `build/<triplet>/bin/me7sum`       |
+| Cygwin   | `libgmp-devel`                          | `build/<triplet>/bin/me7sum.exe`   |
+| MinGW    | Bundled `mpir/libgmp-<triplet>.a`       | `build/<triplet>/bin/me7sum.exe`   |
+| Windows  | Bundled `mpir/mpir-2017.lib`            | `me7sum.exe`                       |
+
+`make package` is GNU make. Linux and macOS write `build/me7sum-<os>-<version>.tar.gz` (the binary, `README.md`, `sample.ini`, and on Linux `ME7Check_linux`). Cygwin writes `build/me7sum-<version>.zip` (the gcc binary, `ME7Check.exe`, `README.md`, `sample.ini`). Windows CI does not run that target. `build.cmd` builds with nmake, then the workflow zips `me7sum.exe`, `ME7Check.exe`, `README.md`, and `sample.ini` to the same zip name with `tar`.
 
 ---
 
 ## Optional: Cross-compile for Windows (MinGW)
 
-`vars.mk` supports MinGW when `gcc -dumpmachine` contains `mingw`. Uncomment and set:
+Requires MinGW toolchain and GMP built for MinGW (included in `mpir/`).
 
-```make
-SYS := i686-w64-mingw32
+Debian:
+
+```shell
+sudo apt install gcc-mingw-w64 gcc-mingw-w64-i686
 ```
 
-Requires MinGW toolchain and GMP built for MinGW.
+Under cygwin:
+
+- **mingw64-i686-gcc-g++** and/or **mingw64-x86_64-gcc-g++**
+
+GMP for these targets is the bundled archive `mpir/libgmp-<triplet>.a` on every host (Linux, Cygwin, and macOS). `make mingw` and `make mingw32` set `SYS` to the MinGW triplet; `vars.mk` links that archive whenever `SYS` contains `mingw`.
+
+```shell
+make mingw
+```
+
+or
+
+```shell
+make mingw32
+```

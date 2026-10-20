@@ -9,12 +9,6 @@ on:
 permissions:
   contents: read
 
-env:
-  artifacts: |
-    me7sum.exe
-    ME7Check.exe
-    README.md
-
 jobs:
   build:
     runs-on: windows-latest
@@ -23,6 +17,12 @@ jobs:
     - name: build
       shell: cmd
       run: build.cmd
+    - name: zip
+      shell: pwsh
+      run: |
+        New-Item -ItemType Directory -Force -Path build | Out-Null
+        $version = (git describe --tags --abbrev=4 --dirty --always).Trim()
+        tar -a -c -f "build/me7sum-$version.zip" me7sum.exe ME7Check.exe README.md sample.ini
     - uses: rlespinasse/github-slug-action@v5
       id: slug
       with:
@@ -30,4 +30,4 @@ jobs:
     - uses: actions/upload-artifact@v7
       with:
         name: me7sum-${{ steps.slug.outputs.GITHUB_SHA_SHORT }}-win
-        path: ${{ env.artifacts }}
+        path: build/me7sum-*

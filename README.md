@@ -65,7 +65,7 @@ DO NOT FLASH ANY BINS without a backup ECU or a way to restore a known good bin 
 # Building
 See [BUILD.md](BUILD.md) for full build instructions and dependencies (Linux, Windows, Cygwin, macOS).
 
-Quick start: under Unix or Cygwin, `make` should work (Debian: `libgmp-dev`; Cygwin: `libgmp-devel`). Under Windows MSVC/nmake, run `build clean` then `build`. Under macOS, `brew install gmp` then `make`.
+Quick start: under Unix or Cygwin, `make` should work (Debian: `libgmp-dev`; Cygwin: `libgmp-devel`). Under Windows MSVC/nmake, run `build clean` then `build`. Under macOS, `brew install pkg-config gmp` then `make`.
 
 # Contributing
 Feel free to contribute to the project! See [RELEASE.md](RELEASE.md) for the release process and GitHub workflow behavior.

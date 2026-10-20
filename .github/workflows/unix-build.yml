@@ -9,12 +9,6 @@ on:
 permissions:
   contents: read
 
-env:
-  artifacts: |
-    me7sum
-    ME7Check_linux
-    README.md
-
 jobs:
   build:
     strategy:
@@ -34,6 +28,8 @@ jobs:
       run: make
     - name: make test
       run: make test
+    - name: package
+      run: make package
     - uses: rlespinasse/github-slug-action@v5
       id: slug
       with:
@@ -41,4 +37,4 @@ jobs:
     - uses: actions/upload-artifact@v7
       with:
         name: me7sum-${{ steps.slug.outputs.GITHUB_SHA_SHORT }}-${{ matrix.os }}
-        path: ${{ env.artifacts }}
+        path: build/me7sum-*

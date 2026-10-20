@@ -21,12 +21,12 @@ Two workflows run on every push/PR to **any branch**; on tag push, a single work
 
 | Workflow | Runners | Output |
 |----------|---------|--------|
-| `release.yml` | ubuntu, macos, windows | On tag push: builds all platforms, git-cliff notes, creates release with `me7sum-<tag>-ubuntu.zip`, `me7sum-<tag>-macos.zip`, `me7sum-<tag>-win.zip` |
-| `windows-build.yml` | `windows-latest` | Push/PR: `me7sum.exe`, `ME7Check.exe`, `README.md` → artifact |
-| `unix-build.yml` | `ubuntu-latest`, `macos-latest` | Push/PR: `me7sum`, `ME7Check_linux`, `README.md` → artifact |
-| `corpus-bump.yml` | `ubuntu-latest` | Weekly or by hand: moves the `corpus` submodule to the ecu-corpus head and opens a pull request |
+| `release.yml` | ubuntu, macos, windows | On tag push: `make package` on ubuntu and macos, `build.cmd` plus a zip on windows, git-cliff notes, release assets are those archives |
+| `windows-build.yml` | `windows-latest` | Push/PR: `build.cmd`, then `build/me7sum-<version>.zip` |
+| `unix-build.yml` | `ubuntu-latest`, `macos-latest` | Push/PR: `make package` → `build/me7sum-<os>-<version>.tar.gz` |
+| `corpus-bump.yml` | `ubuntu-latest` | Weekly or by hand: moves the `ecu-corpus` submodule to its head and opens a pull request |
 
-`unix-build.yml` and `release.yml` fetch the private `corpus` submodule with a short-lived token from the `nyetlabs-corpus-reader` GitHub App (organization variable `CORPUS_APP_CLIENT_ID` and secret `CORPUS_APP_KEY`) and run `make test` with `XDFKIT_REQUIRE_CORPUS=1`. Pull requests from forks get no secrets, so they skip the corpus images. `corpus-bump.yml` needs "Allow GitHub Actions to create and approve pull requests" in the repository's Actions settings; its pull requests don't trigger other workflows, so run the tests on the bump branch by hand.
+`unix-build.yml` and `release.yml` fetch the private `ecu-corpus` submodule with a short-lived token from the `nyetlabs-corpus-reader` GitHub App (organization variable `CORPUS_APP_CLIENT_ID` and secret `CORPUS_APP_KEY`) and run `make test` with `REQUIRE_CORPUS=1`. Pull requests from forks get no secrets, so they skip the corpus images. `corpus-bump.yml` needs "Allow GitHub Actions to create and approve pull requests" in the repository's Actions settings; its pull requests don't trigger other workflows, so run the tests on the bump branch by hand.
 
 On push/PR, artifacts are uploaded to the Actions run with short SHA in the name. On tag push, `release.yml` does builds and release creation in one run (no separate release trigger needed).
 
@@ -68,7 +68,7 @@ Releases are created automatically when you push a tag:
 
 1. Create and push a tag (e.g. `v1.1.4` for full release, `v1.1.4-rc1` for prerelease)
 2. Wait 5–10 minutes for `release.yml` to build and create the release
-3. Refresh the release page to verify the zip files and changelog are present
+3. Refresh the release page to verify the archives and changelog are present
 
 Example:
 
