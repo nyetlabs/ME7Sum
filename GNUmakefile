@@ -16,7 +16,7 @@ distclean: clean
 	$(RM) -r corpus bins me7sum # old binaries, bins/, and corpus
 
 test: $(EXE)
-	ME7SUM=$(EXE) scripts/test.sh
+	ME7SUM=$(EXE) ./scripts/test.py
 
 # corpus: fetch the private ecu-corpus submodule at its pinned commit (needs access)
 # corpus-bump: move it to the ecu-corpus head (commit it yourself)

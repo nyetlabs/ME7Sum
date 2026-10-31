@@ -896,7 +896,8 @@ int main(int argc, char **argv)
     if(ErrorsUncorrectable)
     {
         printf("\n*** ABORTING! %d uncorrectable error(s) in %s! ***\n", ErrorsUncorrectable, input);
-        return -1;
+        release(&ih, osconfig);
+        return 1;
     }
 
     if(output && ErrorsCorrected > 0)
@@ -933,7 +934,7 @@ out:
         printf("\n*** DONE! %d error(s) in %s! ***\n", ErrorsFound, input);
     }
 
-    return 0;
+    return (ErrorsUncorrectable || ErrorsFound != ErrorsCorrected) ? 1 : 0;
 }
 
 /*

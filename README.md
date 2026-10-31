@@ -23,6 +23,8 @@ me7sum image.bin out.bin
 
 **If you do not supply "out.bin", ME7Sum will only check "image.bin" for errors - it will not make any corrections**
 
+A check exits 1 when any error remains. With `out.bin`, me7sum exits 1 only when a correction could not be written.
+
 Options:
 
 - `-h`, `-?`, `--help` — show this help and exit
