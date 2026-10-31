@@ -230,12 +230,86 @@ static int FindChecksumBlks(const struct ImageHandle *ih, int which);
 static int DoChecksumBlk(struct ImageHandle *ih, uint32_t nStartBlk, struct strbuf *buf, int bootrom, const char *name);
 static int DoBgChecksums(struct ImageHandle *ih);
 
-static void usage(const char *prog)
+static void usage(const char *prog, int status)
 {
-    printf("Usage: %s [-V] [-v] [-p] [-i <config.ini>] <inrom.bin> [outrom.bin]\n", prog);
-    printf("       %s [-V] [-v] [-p] [-i <config.ini>] [-r <report.txt>] [-s] <inrom.bin>\n", prog);
+    printf("Usage: %s [options] <inrom.bin> [outrom.bin]\n", prog);
+    printf("       %s [options] [-r <report.txt>] [--step N] <inrom.bin>\n", prog);
+    printf("Check Bosch ME7.x firmware checksums. If outrom.bin is given, write a\n");
+    printf("corrected image. Without outrom.bin, the image is only checked.\n");
+    printf("  -h, -?, --help\n");
+    printf("       Show this help and exit\n");
+    printf("  -V   Print version and exit\n");
+    printf("  -v   Increase verbosity (repeatable)\n");
+    printf("  -q   Decrease verbosity\n");
     printf("  -p   Force Porsche ME7.x mode (auto-detected if omitted)\n");
-    exit(-1);
+    printf("  -i <config.ini>\n");
+    printf("       Load firmware layout from an ini file\n");
+    printf("  -r <report.txt>\n");
+    printf("       Write a checksum report (not allowed with outrom.bin)\n");
+    printf("  --step N\n");
+    printf("       Stop after processing step N (not allowed with outrom.bin)\n");
+    printf("  -e, --epk\n");
+    printf("       Print ROM identification (EPK, or the Porsche header) and exit\n");
+    printf("       (not allowed with outrom.bin)\n");
+    exit(status);
+}
+
+/* getopt/pgetopt have no long options. Remove --help, --step, and --epk
+ * before the short-option loop. Stop at "--". */
+static void take_long_opts(int *argc, char **argv, const char *prog,
+    int *step, int *epk_only)
+{
+    int i, w;
+
+    for (i = 1; i < *argc; i++) {
+        if (!strcmp(argv[i], "--"))
+            break;
+        if (!strcmp(argv[i], "--help"))
+            usage(prog, 0);
+    }
+
+    w = 1;
+    for (i = 1; i < *argc; i++) {
+        const char *arg = argv[i];
+
+        if (!strcmp(arg, "--")) {
+            while (i < *argc)
+                argv[w++] = argv[i++];
+            break;
+        }
+        if (!strcmp(arg, "--epk")) {
+            *epk_only = 1;
+            *step = 1;
+            continue;
+        }
+        if (!strncmp(arg, "--step", 6) && (arg[6] == '\0' || arg[6] == '=')) {
+            const char *val;
+            char *end = NULL;
+            long n;
+
+            if (arg[6] == '=')
+                val = arg + 7;
+            else if (i + 1 < *argc)
+                val = argv[++i];
+            else {
+                fprintf(stderr, "Option --step requires an argument.\n");
+                usage(prog, -1);
+                return;
+            }
+            errno = 0;
+            n = strtol(val, &end, 10);
+            if (end == val || *end || errno || n < 1 || n > 999) {
+                fprintf(stderr, "Option --step requires a step number.\n");
+                usage(prog, -1);
+                return;
+            }
+            *step = (int)n;
+            continue;
+        }
+        argv[w++] = argv[i];
+    }
+    argv[w] = NULL;
+    *argc = w;
 }
 
 static int print_version(void)
@@ -303,6 +377,20 @@ static int check_whitelist(struct ImageHandle *ih, uint32_t addr)
 }
 #endif
 
+static void release(struct ImageHandle *ih, struct section *osconfig)
+{
+    if (ih->d.p != 0)
+        ifree_file(ih);
+    if (osconfig != 0)
+        free_properties(osconfig);
+    if (ReportFile) {
+        PrintAllRecords(ReportFile);
+        fclose(ReportFile);
+        ReportFile = NULL;
+    }
+    FreeAllRecords();
+}
+
 /*
  * main()
  *
@@ -311,7 +399,8 @@ int main(int argc, char **argv)
 {
     int Step=0;
     int     iTemp;
-    int summary=0;
+    int step=0;
+    int epk_only=0;
     char *prog=argv[0];
     char *inifile=NULL;
     char *reportfile=NULL;
@@ -325,8 +414,9 @@ int main(int argc, char **argv)
     memset(&buf, 0, sizeof(buf));
 
     opterr=0;
+    take_long_opts(&argc, argv, prog, &step, &epk_only);
 
-    while ((c = getopt(argc, argv, "Vqsvpi:r:")) != -1)
+    while ((c = getopt(argc, argv, "Vqvephi:r:")) != -1)
     {
         switch (c)
         {
@@ -335,15 +425,19 @@ int main(int argc, char **argv)
             case 'q':
                 Verbose--;
                 break;
-            case 's':
-                summary++;
-                break;
             case 'v':
                 Verbose++;
+                break;
+            case 'e':
+                epk_only=1;
+                step=1;
                 break;
             case 'p':
                 Config.is_porsche=1;
                 break;
+            case 'h':
+                usage(prog, 0);
+                return 0;
             case 'i':
                 inifile=optarg;
                 break;
@@ -351,13 +445,18 @@ int main(int argc, char **argv)
                 reportfile=optarg;
                 break;
             case '?':
-                if (optopt == 'i')
+                if (optopt == '?') {
+                    usage(prog, 0);
+                    return 0;
+                }
+                if (optopt == 'i' || optopt == 'r')
                     fprintf(stderr, "Option -%c requires an argument.\n", optopt);
                 else if (isprint(optopt))
                     fprintf(stderr, "Unknown option '-%c'.\n", optopt);
-                // break; // fallthrough
+                usage(prog, -1);
+                return -1;
             default:
-                usage(prog);
+                usage(prog, -1);
                 return -1;
         }
     }
@@ -374,7 +473,7 @@ int main(int argc, char **argv)
     argv+=optind;
 
     if (argc==0 || argc>2)
-        usage(prog);
+        usage(prog, -1);
 
     input = argv[0];
 
@@ -383,15 +482,21 @@ int main(int argc, char **argv)
     else
         Config.readonly=1;
 
-    if (summary && output) {
-        fprintf(stderr, "-s cannot be used with output file\n");
-        usage(prog);
+    if (epk_only && output) {
+        fprintf(stderr, "-e cannot be used with output file\n");
+        usage(prog, -1);
+        return -1;
+    }
+
+    if (step && output) {
+        fprintf(stderr, "--step cannot be used with output file\n");
+        usage(prog, -1);
         return -1;
     }
 
     if (reportfile && output) {
         fprintf(stderr, "-r cannot be used with output file\n");
-        usage(prog);
+        usage(prog, -1);
         return -1;
     }
 
@@ -491,7 +596,12 @@ int main(int argc, char **argv)
         }
     }
 
-    if(summary && summary<=Step) goto out;
+    if (epk_only) {
+        release(&ih, osconfig);
+        return 0;
+    }
+
+    if(step && step<=Step) goto out;
 
     DEBUG_EXIT_ROM;
 
@@ -516,7 +626,7 @@ int main(int argc, char **argv)
         ErrorsUncorrectable++;
     }
 
-    if(summary && summary<=Step) goto out;
+    if(step && step<=Step) goto out;
 
     DEBUG_EXIT_ROMSYS;
 
@@ -537,7 +647,7 @@ int main(int argc, char **argv)
         }
     }
 
-    if(summary && summary<=Step) goto out;
+    if(step && step<=Step) goto out;
 
 
     //
@@ -560,7 +670,7 @@ int main(int argc, char **argv)
         }
     }
 
-    if(summary && summary<=Step) goto out;
+    if(step && step<=Step) goto out;
 
     DEBUG_EXIT_RSA;
 
@@ -631,7 +741,7 @@ int main(int argc, char **argv)
         }
     }
 
-    if(summary && summary<=Step) goto out;
+    if(step && step<=Step) goto out;
 
     DEBUG_EXIT_CRC;
 
@@ -653,7 +763,7 @@ int main(int argc, char **argv)
         ErrorsUncorrectable++;
     }
 
-    if(summary && summary<=Step) goto out;
+    if(step && step<=Step) goto out;
 
     DEBUG_EXIT_ROMSYS_PP;
 
@@ -667,7 +777,7 @@ int main(int argc, char **argv)
     else
         DoBgChecksums(&ih);
 
-    if(summary && summary<=Step) goto out;
+    if(step && step<=Step) goto out;
 
 
     //
@@ -699,7 +809,7 @@ int main(int argc, char **argv)
         }
     }
 
-    if(summary && summary<=Step) goto out;
+    if(step && step<=Step) goto out;
 
     DEBUG_EXIT_MAIN;
 
@@ -808,11 +918,7 @@ int main(int argc, char **argv)
 
 out:
 
-    // close the file
-    if(ih.d.p != 0) { ifree_file(&ih); }
-
-    // free config
-    if(osconfig != 0) { free_properties(osconfig); }
+    release(&ih, osconfig);
 
     // Made minor alterations in output to circumvent issue #9 @nyetwurk
     if (ErrorsCorrected!=ErrorsFound) {
@@ -826,13 +932,6 @@ out:
     } else {
         printf("\n*** DONE! %d error(s) in %s! ***\n", ErrorsFound, input);
     }
-
-    if (ReportFile) {
-        PrintAllRecords(ReportFile);
-        fclose(ReportFile);
-    }
-
-    FreeAllRecords();
 
     return 0;
 }

@@ -23,6 +23,18 @@ me7sum image.bin out.bin
 
 **If you do not supply "out.bin", ME7Sum will only check "image.bin" for errors - it will not make any corrections**
 
+Options:
+
+- `-h`, `-?`, `--help` — show this help and exit
+- `-V` — print the version and exit
+- `-v` — increase verbosity (repeatable)
+- `-q` — decrease verbosity
+- `-p` — force Porsche ME7.x mode (auto-detected if omitted)
+- `-i <config.ini>` — load firmware layout from an ini file
+- `-r <report.txt>` — write a checksum report (not allowed with an output image)
+- `--step N` — stop after processing step N (not allowed with an output image)
+- `-e`, `--epk` — print ROM identification (EPK, or the Porsche header) and exit (not allowed with an output image)
+
 Note that if me7sum cannot completely detect checksum/CRC locations correctly, it will not output a file!
 
 **Always use me7sum on a original version of your bin first to make sure it is compatible!**
