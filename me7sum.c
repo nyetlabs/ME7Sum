@@ -236,6 +236,8 @@ static void usage(const char *prog, int status)
     printf("       %s [options] [-r <report.txt>] [--step N] <inrom.bin>\n", prog);
     printf("Check Bosch ME7.x firmware checksums. If outrom.bin is given, write a\n");
     printf("corrected image. Without outrom.bin, the image is only checked.\n");
+    printf("Exits 1 when errors remain. With outrom.bin, exits 1 only if a\n");
+    printf("correction could not be written.\n");
     printf("  -h, -?, --help\n");
     printf("       Show this help and exit\n");
     printf("  -V   Print version and exit\n");
@@ -896,7 +898,8 @@ int main(int argc, char **argv)
     if(ErrorsUncorrectable)
     {
         printf("\n*** ABORTING! %d uncorrectable error(s) in %s! ***\n", ErrorsUncorrectable, input);
-        return -1;
+        release(&ih, osconfig);
+        return 1;
     }
 
     if(output && ErrorsCorrected > 0)
@@ -933,7 +936,7 @@ out:
         printf("\n*** DONE! %d error(s) in %s! ***\n", ErrorsFound, input);
     }
 
-    return 0;
+    return (ErrorsUncorrectable || ErrorsFound != ErrorsCorrected) ? 1 : 0;
 }
 
 /*

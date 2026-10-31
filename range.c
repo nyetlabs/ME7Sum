@@ -55,13 +55,15 @@ static int test_for_csum_overlap(struct ReportRecord *rec, struct list_head *rec
         if (strncmp(rec->name, rr->name, MAX_NAME_LENGTH)) {
             const struct Range *csum = &rr->checksum;
             if (MAX(csum->start, data->start)<=MIN(csum->end, data->end)) {
+                int bad = rr->index > rec->index;
                 sbprintf(&rec->msg, "%d-%s checksum is in %d-%s data: (0x%08x-0x%08x) overlaps with (0x%08x-0x%08x): %s\n",
                     rr->index, rr->name, rec->index, rec->name,
                     csum->start, csum->end,
                     data->start, data->end,
-                    rr->index > rec->index?"ERROR":"OK");
+                    bad ? "ERROR" : "OK");
+                if (bad)
+                    rec->dep_errs++;
                 ret ++;
-                // exit(-1);
             }
         }
     }
