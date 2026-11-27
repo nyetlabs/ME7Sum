@@ -2,6 +2,7 @@
 .*.swp
 .compiler_flags
 .clangd
+/plans/
 /testdata/reports/
 
 # unix build artifacts

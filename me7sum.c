@@ -1336,17 +1336,23 @@ static int FindECUID(const struct ImageHandle *ih)
      *   mov r5, #0x02xx          segment 0x200-0x20F
      *   mov 0xE24x, r4           RAM slot; low nibble varies
      *   mov 0xE24x, r5           0xE242/0xE244 or 0xE240/0xE242
+     * Some images use r14/r15 into 0xE240/0xE242 instead.
+     * Try that only when r4/r5 is absent; an earlier store can point at another table.
      */
     // E6 F4 .. .. E6 F5 06 02 F6 F4 42 E2 F6 F5 44 E2
     // E6 F4 .. .. E6 F5 06 02 F6 F4 40 E2 F6 F5 42 E2
+    // E6 FE .. .. E6 FF 06 02 F6 FE 40 E2 F6 FF 42 E2
     // \e6f4..e6f50602f6f4.e2f6f5.e2
     //                                LL    LL                HH    HH
-    uint8_t needle[] = {0xE6, 0xF4, 0x00, 0x00, 0xE6, 0xF5, 0x06, 0x02, 0xF6, 0xF4, 0x42, 0xE2, 0xF6, 0xF5, 0x44, 0xE2};
-    uint8_t   mask[] = {0xff, 0xff, 0x00, 0x00, 0xff, 0xff, 0xf0, 0xff, 0xff, 0xff, 0xf0, 0xff, 0xff, 0xff, 0xf0, 0xff};
+    uint8_t needle0[] = {0xE6, 0xF4, 0x00, 0x00, 0xE6, 0xF5, 0x06, 0x02, 0xF6, 0xF4, 0x42, 0xE2, 0xF6, 0xF5, 0x44, 0xE2};
+    uint8_t needle1[] = {0xE6, 0xFE, 0x00, 0x00, 0xE6, 0xFF, 0x06, 0x02, 0xF6, 0xFE, 0x40, 0xE2, 0xF6, 0xFF, 0x42, 0xE2};
+    uint8_t    mask[] = {0xff, 0xff, 0x00, 0x00, 0xff, 0xff, 0xf0, 0xff, 0xff, 0xff, 0xf0, 0xff, 0xff, 0xff, 0xf0, 0xff};
 
     printf(" Searching for ECUID table...");
 
-    found=FindData(ih, "ECUID table", needle, mask, sizeof(needle), 1, 3, offset, 2, &where);
+    found=FindData(ih, "ECUID table", needle0, mask, sizeof(needle0), 1, 3, offset, 2, &where);
+    if (found<1)
+        found=FindData(ih, "ECUID table", needle1, mask, sizeof(needle1), 1, 3, offset, 2, &where);
 
     if (found>0)
     {
@@ -2401,6 +2407,23 @@ static int locate_helper(const struct ImageHandle *ih, uint32_t addr)
     return 0;
 }
 
+/* Keep tables whose first word is zero. n is 1 or 2. */
+static int store_crc_tab(const struct ImageHandle *ih, uint32_t *off, int n, const char *how)
+{
+    int i, found=0;
+
+    for (i=0;i<n && found<2;i++) {
+        uint32_t crc0=le32toh(*((uint32_t *)(ih->d.u8+off[i])));
+        if(crc0!=0) {
+            printf("*** WARNING: %s @0x%06x, CRC[0]=%08X in %s\n",
+                how, off[i], crc0, ih->filename);
+            continue;
+        }
+        Config.crctab[found++]=off[i];
+    }
+    return found;
+}
+
 static int FindCRCTab(const struct ImageHandle *ih)
 {
     uint32_t off[2]={0,0};
@@ -2449,26 +2472,16 @@ static int FindCRCTab(const struct ImageHandle *ih)
 
     no_walk = (found<1);
 
-    if (found<1 || found>2) {
+    if (found<1 || found>2)
         printf("missing\n");
-    } else {
-        int temp=found;
-        found=0;
-        for (i=0;i<temp;i++) {
-            uint32_t crc0=le32toh(*((uint32_t *)(ih->d.u8+off[i])));
-            if(crc0!=0) {
-                printf("*** WARNING: ASM detect @0x%06x, CRC[0]=%08X in %s\n",
-                    off[i], crc0, ih->filename);
-                continue;
-            }
-            Config.crctab[found++]=off[i];
-        }
-    }
+    else
+        found=store_crc_tab(ih, off, found, "ASM detect");
 
     if (found<1 || found>2) {
-        int temp = crc_table_fallback(ih, off);
+        int temp=crc_table_fallback(ih, off);
         printf(" Searching for CRC table(s) using fallback...");
-        if (temp<1 || temp>2) {
+        found=(temp>=1 && temp<=2) ? store_crc_tab(ih, off, temp, "fallback") : 0;
+        if (found<1) {
             if (no_walk && crc_table_runtime(ih)) {
                 Config.crc_runtime = 1;
                 printf("generated at runtime\n");
@@ -2478,9 +2491,8 @@ static int FindCRCTab(const struct ImageHandle *ih)
             return -1;
         }
 
-        for (i=0;i<found;i++) {
-            locate_helper(ih, off[i]);
-        }
+        for (i=0;i<found;i++)
+            locate_helper(ih, Config.crctab[i]);
 
         printf("*** WARNING: ASM detect failed, fell back (found %d) in %s\n",
             found, ih->filename);
