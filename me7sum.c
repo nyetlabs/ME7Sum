@@ -130,6 +130,7 @@ struct rom_config {
         uint32_t     offset;
     } crc[MAX_CRC_BLKS+1];                          /* 0/4 is pre-region (for kbox and other) Up to 5 CRC blocks (total) to check */
     uint32_t        csm_offset;                     /* ME7.1.1 */
+    int             csm_bytesum;                    /* adder loop is an 8-bit sum */
 };
 
 struct info_config {
@@ -202,6 +203,7 @@ static int FindPorscheRomInfo(const struct ImageHandle *ih);  /* Porsche ME7.x h
 static int DoPorscheCalCRC(struct ImageHandle *ih);           /* Porsche ME7.x calibration CRC32 */
 
 static int FindROMSYS(const struct ImageHandle *ih);
+static int romsys_erased(const struct ImageHandle *ih);
 static int DoROMSYS(struct ImageHandle *ih); // Startup in RSA, MP; ParamPage in RSA, MP, Main CSM, Main CRC
 
 static int FindMainCRCPreBlk(const struct ImageHandle *ih);
@@ -209,6 +211,7 @@ static int FindMainCRCBlks(const struct ImageHandle *ih);
 static int FindMainCRCOffsets(const struct ImageHandle *ih);
 static int DoMainCRCs(struct ImageHandle *ih); // In ROMSYS Program Pages (sometimes), Main CSM, MP
 
+static int FindByteSum(const struct ImageHandle *ih);
 static int FindMainCSMOffsets(const struct ImageHandle *ih);
 static int DoMainCSMs(struct ImageHandle *ih); // In Main Program CSM, MP
 
@@ -222,6 +225,7 @@ static int FindCRCTab(const struct ImageHandle *ih);
 static int DoCRCTab(struct ImageHandle *ih);
 
 static int FindMainProgramOffset(const struct ImageHandle *ih);
+static int main_program_absent(const struct ImageHandle *ih);
 static int FindMainProgramFinal(const struct ImageHandle *ih);
 static int DoMainProgramCSM(struct ImageHandle *ih); // In MP
 
@@ -705,6 +709,11 @@ int main(int argc, char **argv)
             FindMainCSMOffsets(&ih);        /* Detect if using Checksum algo */
         }
 
+        if(Config.csm_offset && !Config.csm_bytesum)
+        {
+            FindByteSum(&ih);               /* 8-bit accumulator loop */
+        }
+
         if(Config.crc[1].r.start && Config.crc[1].r.end &&
             (Config.crc[1].offset || Config.csm_offset)) {
             if(Verbose && Config.csm_offset) {
@@ -754,6 +763,8 @@ int main(int argc, char **argv)
         printf("\nStep #%d: ROMSYS Program Pages\n", ++Step);
         if (Config.romsys_header_ok)
             DoROMSYS_ProgramPages(&ih);
+        else if (romsys_erased(&ih))
+            printf("Step #%d: No ROMSYS program pages\n", Step);
         else
             printf("Step #%d: Skipping ROMSYS Program Pages (header check failed)\n", Step);
     }
@@ -801,6 +812,10 @@ int main(int argc, char **argv)
         {
             //DoMainProgramCSM(&ih, Config.main_checksum_offset, Config.main_checksum_final);
             DoMainProgramCSM(&ih);
+        }
+        else if (main_program_absent(&ih))
+        {
+            printf(" absent\n");
         }
         else
         {
@@ -1338,21 +1353,31 @@ static int FindECUID(const struct ImageHandle *ih)
      *   mov 0xE24x, r5           0xE242/0xE244 or 0xE240/0xE242
      * Some images use r14/r15 into 0xE240/0xE242 instead.
      * Try that only when r4/r5 is absent; an earlier store can point at another table.
+     * A third form reads the table in place. Its page is outside 0x0200-0x020F:
+     *   extp #0x0239, #1
+     *   movb RL8, [r14+#lo]
+     *   movbz r4, RL8
      */
     // E6 F4 .. .. E6 F5 06 02 F6 F4 42 E2 F6 F5 44 E2
     // E6 F4 .. .. E6 F5 06 02 F6 F4 40 E2 F6 F5 42 E2
     // E6 FE .. .. E6 FF 06 02 F6 FE 40 E2 F6 FF 42 E2
+    // D7 40 39 02 F4 8E .. .. C0 84
     // \e6f4..e6f50602f6f4.e2f6f5.e2
     //                                LL    LL                HH    HH
     uint8_t needle0[] = {0xE6, 0xF4, 0x00, 0x00, 0xE6, 0xF5, 0x06, 0x02, 0xF6, 0xF4, 0x42, 0xE2, 0xF6, 0xF5, 0x44, 0xE2};
     uint8_t needle1[] = {0xE6, 0xFE, 0x00, 0x00, 0xE6, 0xFF, 0x06, 0x02, 0xF6, 0xFE, 0x40, 0xE2, 0xF6, 0xFF, 0x42, 0xE2};
     uint8_t    mask[] = {0xff, 0xff, 0x00, 0x00, 0xff, 0xff, 0xf0, 0xff, 0xff, 0xff, 0xf0, 0xff, 0xff, 0xff, 0xf0, 0xff};
+    //                                              HH    HH          LL    LL
+    uint8_t needle2[] = {0xD7, 0x40, 0x39, 0x02, 0xF4, 0x8E, 0x00, 0x00, 0xC0, 0x84};
+    uint8_t   mask2[] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0xff, 0xff};
 
     printf(" Searching for ECUID table...");
 
     found=FindData(ih, "ECUID table", needle0, mask, sizeof(needle0), 1, 3, offset, 2, &where);
     if (found<1)
         found=FindData(ih, "ECUID table", needle1, mask, sizeof(needle1), 1, 3, offset, 2, &where);
+    if (found<1)
+        found=FindData(ih, "ECUID table", needle2, mask2, sizeof(needle2), 3, 1, offset, 2, &where);
 
     if (found>0)
     {
@@ -2301,6 +2326,14 @@ static int DoROMSYS_ParamPage(struct ImageHandle *ih, struct ROMSYSDescriptor *d
     return 0;
 }
 
+static int romsys_erased(const struct ImageHandle *ih)
+{
+    if (!Config.romsys || Config.romsys+sizeof(struct ROMSYSDescriptor)>ih->len)
+        return 0;
+
+    return bytecmp(ih->d.u8+Config.romsys, 0xff, sizeof(struct ROMSYSDescriptor))==0;
+}
+
 static int DoROMSYS(struct ImageHandle *ih)
 {
     struct ROMSYSDescriptor desc;
@@ -2312,6 +2345,11 @@ static int DoROMSYS(struct ImageHandle *ih)
     }
 
     memcpy_from_le32(&desc, ih->d.u8+Config.romsys, sizeof(desc));
+
+    if (romsys_erased(ih)) {
+        printf(" No ROMSYS block\n");
+        return 0;
+    }
 
     DEBUG_ROMSYS("00 0x%08X 0x%08X sections 0x%08X checksums 0x%08X\n",
         desc.res00_07[0], desc.res00_07[1],
@@ -2678,14 +2716,14 @@ static int FindMainCRCBlks(const struct ImageHandle *ih)
      *   addc r9, r11
      *   mov r4, #lo              block end
      *   mov r5, #seg
-     *   sub r4, #adj             low byte varies, high byte is 0
+     *   sub <mem>, #step         0xF0 on the byte-sum walker; low byte varies
      *   subc r5, #0
      *   sub r4, r8
      *   subc r5, r9
      */
-    //                                        LL    LL                HH    HH
-    uint8_t n1[] = {0x10, 0x9B, 0xE6, 0xF4, 0x00, 0x00, 0xE6, 0xF5, 0x80, 0x00 /*, 0x26, 0xF4, 0x9B, 0xE6 */};
-    uint8_t m1[] = {0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0xff, 0xff, 0xf0, 0xff /*, 0xff, 0xff, 0xff, 0xff */};
+    //                                        LL    LL                HH    HH                step
+    uint8_t n1[] = {0x10, 0x9B, 0xE6, 0xF4, 0x00, 0x00, 0xE6, 0xF5, 0x80, 0x00, 0x26, 0xF4, 0xF0, 0x00};
+    uint8_t m1[] = {0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0xff, 0xff, 0xf0, 0xff, 0xff, 0xff, 0x00, 0xff};
 
     printf(" Searching for main data CRC/csum blocks...");
     DEBUG_FLUSH_CRC;
@@ -2798,6 +2836,52 @@ static int FindMainCRCOffsets(const struct ImageHandle *ih)
     }
 
     printf("OK\n");
+    return 0;
+}
+
+/* 8-bit accumulator. r8/r9 is the far pointer, one byte per iteration.
+ *   exts r9, #1
+ *   movb RL4, [r8]
+ *   movbz r10, RL4
+ *   mov r11, #0
+ *   mov r4, [r0+#4]
+ *   mov r5, [r0+#6]
+ *   add r4, r10
+ *   addc r5, r11
+ *   mov [r0+#4], r4
+ *   mov [r0+#6], r5
+ *   add r8, #1
+ *   addc r9, #0
+ * A hit selects CalcChecksumBlk8 for the main checksum.
+ */
+static int FindByteSum(const struct ImageHandle *ih)
+{
+    static const uint8_t n[] = {
+        0xDC, 0x09, 0xA9, 0x88, 0xC0, 0x8A, 0xE0, 0x0B,
+        0xD4, 0x40, 0x04, 0x00, 0xD4, 0x50, 0x06, 0x00,
+        0x00, 0x4A, 0x10, 0x5B, 0xC4, 0x40, 0x04, 0x00,
+        0xC4, 0x50, 0x06, 0x00, 0x08, 0x81, 0x18, 0x90
+    };
+    int found = 0;
+    int i;
+
+    printf(" Searching for main data byte sum...");
+
+    for (i = 0; i + (int)sizeof(n) < (int)ih->len; i += 2) {
+        i = search_image(ih, i, n, NULL, sizeof(n), 2);
+        if (i < 0)
+            break;
+        found++;
+    }
+
+    if (found < 1) {
+        printf("missing\n");
+        return -1;
+    }
+
+    Config.csm_bytesum = 1;
+    printf("OK\n");
+
     return 0;
 }
 
@@ -2949,7 +3033,8 @@ static int DoMainCSMs(struct ImageHandle *ih)
             printf(" %d) 0x%06X-0x%06X", i,
                 Config.crc[i].r.start, Config.crc[i].r.end);
 
-            /* bytewise checksum */
+            /* 8-bit accumulator. FindByteSum selects this when its loop is present;
+             * the main checksum is a byte sum on images without that loop too. */
             nCalcCSM += CalcChecksumBlk8(ih, &Config.crc[i].r);
 
             printf(" CalcCSM: %08X\n", nCalcCSM);
@@ -3041,6 +3126,22 @@ static int FindMainProgramOffset(const struct ImageHandle *ih)
 
     printf("FAIL\n");
     return -1;
+}
+
+static int main_program_absent(const struct ImageHandle *ih)
+{
+    const uint8_t *p;
+    uint16_t mark;
+
+    if (ih->len<0x20) return 0;
+
+    p=ih->d.u8+ih->len-0x20;
+
+    if (bytecmp(p, 0xff, 0x1e)!=0) return 0;
+
+    memcpy(&mark, p+0x1e, sizeof(mark));
+
+    return le16toh(mark)==0xA5A5;
 }
 
 static int FindMainProgramFinal(const struct ImageHandle *ih)
@@ -3452,6 +3553,15 @@ static int DoChecksumBlk(struct ImageHandle *ih, uint32_t nStartBlk, struct strb
     // C16x processors are little endian
     // copy from (le) buffer into our descriptor
     memcpy_from_le32(&desc, ih->d.u8+nStartBlk, sizeof(desc));
+
+    /* A range below the ROM base is internal flash, which this file does not hold.
+     * Bootrom descriptors are file offsets and stay in the check below. */
+    if (!bootrom && desc.r.start!=0xffffffff &&
+        desc.r.start<Config.base_address && desc.r.end<Config.base_address) {
+        sbprintf(buf, " 0x%08X-0x%08X outside image\n", desc.r.start, desc.r.end);
+        return 0;
+    }
+
     if (!bootrom) {
         if (NormalizeRange(ih, &desc.r))
         {
