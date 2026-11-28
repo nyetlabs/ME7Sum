@@ -3,6 +3,7 @@
 .compiler_flags
 .clangd
 /plans/
+/testdata/incoming/
 /testdata/reports/
 
 # unix build artifacts

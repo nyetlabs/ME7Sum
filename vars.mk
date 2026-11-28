@@ -1,6 +1,8 @@
 # Build environment
 # SYS is the target triplet. Override it to cross-compile (see mingw targets).
-NATIVE_SYS := $(shell gcc -dumpmachine 2>/dev/null)
+#NATIVE_SYS := $(shell gcc -dumpmachine 2>/dev/null)
+# Darwin does really dumb things like add trailing semver
+NATIVE_SYS := $(shell $(CC) -dumpmachine | sed 's/[0-9.]*$$//')
 SYS	?= $(NATIVE_SYS)
 
 UNAME_S	:= $(shell uname -s)
